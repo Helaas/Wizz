@@ -1,0 +1,11 @@
+{
+  "name": "wizz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Score keeper for the Wizard card game, for 3 to 10 players.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8080 --directory site"
+  }
+}
