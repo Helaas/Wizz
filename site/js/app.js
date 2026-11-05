@@ -17,6 +17,7 @@ let chartFocus = null; // highlighted player in the chart
 let lastRouteKey = '';
 let pendingFocus = null;
 let dlg = null; // open dialog spec
+let rowEdit = null; // { p, kind: 'bid' | 'cloud' }: inline editor open on a player row while playing
 
 // ---------- helpers ----------
 
@@ -165,8 +166,9 @@ function numberPicker(kind, p, value, max, { forbidden = null, label }) {
   return `${s}</div>`;
 }
 
-function cloudButton(action, p, adj, name) {
-  return `<button type="button" class="cloud-btn${adj ? ' on' : ''}" data-action="${action}" data-p="${p}" aria-pressed="${!!adj}" aria-label="${esc(t('cloudLabel', { name }))}" data-key="${action}-${p}">${icon('cloud')}<span>${adj > 0 ? '+1' : adj < 0 ? '−1' : '±1'}</span></button>`;
+function cloudButton(action, p, adj, name, bid) {
+  const label = adj ? `${bid}→${bid + adj}` : '±1';
+  return `<button type="button" class="cloud-btn${adj ? ' on' : ''}" data-action="${action}" data-p="${p}" aria-pressed="${!!adj}" aria-label="${esc(t('cloudLabel', { name }))}" data-key="${action}-${p}">${icon('cloud')}<span>${label}</span></button>`;
 }
 
 // ---------- home ----------
@@ -390,6 +392,7 @@ async function startGame() {
   persist();
   draft = null;
   chartFocus = null;
+  rowEdit = null;
   go('play', true);
 }
 
@@ -448,10 +451,17 @@ function viewRound(game) {
       const adj = live.adjust[p] || 0;
       const eb = bid == null ? null : bid + adj;
       let mid = '';
+      let panel = '';
       if (!bidPhase) {
+        const open = rowEdit && rowEdit.p === p ? rowEdit.kind : null;
         const preview = tr == null ? '' : `<span class="delta ${eb === tr ? 'pos' : 'neg'}">${signed(G.roundScore(eb, tr, game.rules.scoring))}</span>`;
-        mid = `<span class="bid-pill">${t('bidN', { n: adj ? `${bid}→${eb}` : bid })}</span>${preview}`;
-        if (game.rules.cloud) mid += cloudButton('cloud', p, adj, name);
+        // The bid stays editable while playing: tap it to correct it.
+        mid = `<button type="button" class="bid-pill edit${open === 'bid' ? ' on' : ''}" data-action="edit-bid" data-p="${p}" aria-expanded="${open === 'bid'}" aria-label="${esc(t('editBidLabel', { name }))}" data-key="edit-bid-${p}">${t('bidN', { n: adj ? `${bid}→${eb}` : bid })}${adj ? icon('cloud') : ''}${icon('edit')}</button>${preview}`;
+        if (game.rules.cloud) {
+          mid += `<button type="button" class="cloud-btn${adj ? ' on' : ''}${open === 'cloud' ? ' open' : ''}" data-action="cloud-open" data-p="${p}" aria-expanded="${open === 'cloud'}" aria-label="${esc(t('cloudLabel', { name }))}" data-key="cloud-${p}">${icon('cloud')}<span>${adj > 0 ? '+1' : adj < 0 ? '−1' : t('cloud')}</span></button>`;
+        }
+        if (open === 'bid') panel = bidEditPanel(game, r, live, p, cards);
+        else if (open === 'cloud' && game.rules.cloud) panel = cloudPanel(game, r, live, p);
       }
       const picker = bidPhase
         ? numberPicker('bid', p, bid, cards, { forbidden: p === dealer ? forbidden : null, label: t('bidLabel', { name }) })
@@ -465,6 +475,7 @@ function viewRound(game) {
           <span class="ptotal">${r ? `<span class="rank">#${ranks[p]}</span>` : ''}${fmt(final[p])}</span>
         </div>
         ${mid ? `<div class="prow-mid">${mid}</div>` : ''}
+        ${panel}
         <div class="prow-pick">${picker}</div>
       </li>`;
     })
@@ -497,6 +508,62 @@ function viewRound(game) {
     </div>`;
 }
 
+function bidEditPanel(game, r, live, p, cards) {
+  const name = game.players[p].name;
+  const forbidden = G.forbiddenBidFor(game, r, live.bids, p);
+  return `<div class="row-panel">
+    <div class="panel-head"><p class="panel-label">${icon('edit')}${esc(t('editBidLabel', { name }))}</p>
+      <button type="button" class="link" data-action="panel-close">${t('done')}</button></div>
+    ${numberPicker('fix-bid', p, live.bids[p], cards, { forbidden, label: t('editBidLabel', { name }) })}
+    ${forbidden != null ? `<p class="hint">${esc(t('forbiddenHint', { name, n: forbidden }))}</p>` : ''}
+  </div>`;
+}
+
+/** Cloud card: the player who wins the cloud trick picks a new bid, one up or one down. */
+function cloudPanel(game, r, live, p) {
+  const name = game.players[p].name;
+  const cur = live.adjust[p] || 0;
+  const holder = live.adjust.findIndex((a, q) => a && q !== p);
+  const btns = G.cloudOptions(game, r, live, p)
+    .filter((o) => o !== 0)
+    .map(
+      (o) => `<button type="button" class="chip wide${cur === o ? ' on' : ''}" aria-pressed="${cur === o}" data-action="set-cloud" data-p="${p}" data-adj="${o}" data-key="set-cloud-${p}-${o}">${o > 0 ? '+1' : '−1'} → ${live.bids[p] + o}</button>`
+    )
+    .join('');
+  const remove = cur
+    ? `<button type="button" class="chip wide ghost" data-action="set-cloud" data-p="${p}" data-adj="0" data-key="set-cloud-${p}-0">${t('cloudRemove')}</button>`
+    : '';
+  return `<div class="row-panel">
+    <div class="panel-head"><p class="panel-label">${icon('cloud')}${esc(t('cloudPrompt', { name }))}</p>
+      <button type="button" class="link" data-action="panel-close">${t('cancel')}</button></div>
+    <div class="chip-row">${btns}${remove}</div>
+    ${holder >= 0 ? `<p class="hint">${esc(t('cloudMoves', { name: game.players[holder].name }))}</p>` : ''}
+  </div>`;
+}
+
+function fixBid(el) {
+  const game = data.current;
+  const live = game.live;
+  const r = game.rounds.length;
+  const cards = G.cardsInRound(r);
+  const p = Number(el.dataset.p);
+  const forbidden = G.forbiddenBidFor(game, r, live.bids, p);
+  let v;
+  if (el.dataset.v != null) v = Number(el.dataset.v);
+  else {
+    const d = Number(el.dataset.d);
+    v = live.bids[p] + d;
+    if (v === forbidden) v += d;
+  }
+  if (v < 0 || v > cards || v === forbidden) return;
+  live.bids[p] = v;
+  // A cloud change that no longer fits the corrected bid is dropped.
+  if (!G.cloudOptions(game, r, live, p).includes(live.adjust[p] || 0)) live.adjust[p] = 0;
+  if (el.dataset.v != null) rowEdit = null;
+  persist();
+  render();
+}
+
 function setLiveValue(kind, el) {
   const game = data.current;
   const live = game.live;
@@ -523,6 +590,7 @@ function scoreRound() {
   const r = game.rounds.length;
   const res = G.commitLiveRound(game);
   if (!res.ok) return toast(t(res.code, res.params), { error: true });
+  rowEdit = null;
   if (G.isFinished(game)) return finishGame(game);
   game.live = G.newLiveRound(game.players.length);
   persist();
@@ -609,7 +677,12 @@ function boardTable(game, isLive) {
   if (isLive && R < total) {
     const live = game.live;
     const cells = game.players
-      .map((_, p) => `<td class="pending">${live && live.bids[p] != null ? `<span class="meta"><span class="bt">${esc(t('bidN', { n: live.bids[p] }))}</span></span>` : ''}</td>`)
+      .map((_, p) => {
+        if (!live || live.bids[p] == null) return '<td class="pending"></td>';
+        const adj = (live.adjust && live.adjust[p]) || 0;
+        const n = adj ? `${live.bids[p]}→${live.bids[p] + adj}` : live.bids[p];
+        return `<td class="pending"><span class="meta"><span class="bt">${esc(t('bidN', { n }))}${adj ? icon('cloud') : ''}</span></span></td>`;
+      })
       .join('');
     body += `<tr class="current"><th scope="row" class="rc"><span class="rnum">${R + 1}</span></th>${cells}</tr>`;
     for (let r = R + 1; r < total; r++) {
@@ -829,15 +902,22 @@ function openRules(game) {
   const r = game.rules;
   const line = (on, label, desc) =>
     `<li class="rule${on ? ' on' : ''}"><span class="rule-mark">${on ? icon('check') : icon('minus')}</span><span><strong>${label}</strong><span class="muted small block">${desc}</span></span></li>`;
+  const toggle = (key, title, desc) => `<label class="toggle">
+      <span class="toggle-text"><span class="toggle-title">${title}</span><span class="toggle-desc">${desc}</span></span>
+      <input type="checkbox" class="switch" data-dlg-rule="${key}" ${r[key] ? 'checked' : ''}>
+    </label>`;
   openDialog({
     title: t('activeRules'),
     body: () => `<ul class="rule-list">
       ${line(true, t('rounds'), `${G.totalRounds(game)} · ${t('deck')}: ${r.deckSize}`)}
-      ${line(r.noEvenBids, t('ruleNoEven'), t('ruleNoEvenDesc'))}
-      ${line(r.bomb, t('ruleBomb'), t('ruleBombDesc'))}
-      ${line(r.cloud, t('ruleCloud'), t('ruleCloudDesc'))}
       ${line(true, t('scoring'), t('scoringSummary', r.scoring))}
-    </ul>`,
+    </ul>
+    <div class="toggles rules-edit">
+      ${toggle('noEvenBids', t('ruleNoEven'), t('ruleNoEvenDesc'))}
+      ${toggle('bomb', t('ruleBomb'), t('ruleBombDesc'))}
+      ${toggle('cloud', t('ruleCloud'), t('ruleCloudDesc'))}
+    </div>
+    <p class="hint">${t('rulesEditHint')}</p>`,
     footer: () => `<button type="button" class="btn ghost block" data-action="dlg-cancel">${t('close')}</button>`,
   });
 }
@@ -847,6 +927,7 @@ function openEditRound(game, r) {
   const src = game.rounds[r];
   const work = { bids: src.bids.slice(), tricks: src.tricks.slice(), adjust: src.adjust ? src.adjust.slice() : Array(n).fill(0) };
   const cards = G.cardsInRound(r);
+  const ctx = { ...game, rules: G.rulesForRound(game, r, src) };
   let error = '';
   openDialog({
     title: t('editRound', { r: r + 1 }),
@@ -855,7 +936,7 @@ function openEditRound(game, r) {
         .map((p) => {
           const name = game.players[p].name;
           return `<li class="edit-row">
-          <div class="edit-name">${swatch(p)}<span class="clamp">${esc(name)}</span>${game.rules.cloud ? cloudButton('e-cloud', p, work.adjust[p] || 0, name) : ''}</div>
+          <div class="edit-name">${swatch(p)}<span class="clamp">${esc(name)}</span>${ctx.rules.cloud ? cloudButton('e-cloud', p, work.adjust[p] || 0, name, work.bids[p]) : ''}</div>
           <div class="edit-fields">
             <div class="edit-field"><span class="edit-label">${t('bid')}</span>${stepper({ action: 'e-bid', value: work.bids[p], min: 0, max: cards, label: t('bidLabel', { name }), key: `e-bid-${p}`, attrs: `data-p="${p}"` })}</div>
             <div class="edit-field"><span class="edit-label">${t('won')}</span>${stepper({ action: 'e-tricks', value: work.tricks[p], min: 0, max: cards, label: t('tricksLabel', { name }), key: `e-tricks-${p}`, attrs: `data-p="${p}"` })}</div>
@@ -874,17 +955,18 @@ function openEditRound(game, r) {
       if (a === 'e-bid' || a === 'e-tricks') {
         const arr = a === 'e-bid' ? work.bids : work.tricks;
         arr[p] = clamp(arr[p] + Number(el.dataset.d), 0, cards);
+        if (!G.cloudOptions(ctx, r, work, p).includes(work.adjust[p] || 0)) work.adjust[p] = 0;
         error = '';
         renderDialog();
       } else if (a === 'e-cloud') {
-        const opts = G.cloudOptions(game, r, work, p);
+        const opts = G.cloudOptions(ctx, r, work, p);
         const next = opts[(opts.indexOf(work.adjust[p] || 0) + 1) % opts.length];
         work.adjust = work.adjust.map(() => 0);
         work.adjust[p] = next;
         error = '';
         renderDialog();
       } else if (a === 'dlg-ok') {
-        const v = G.validateRound(game, r, work);
+        const v = G.validateRound(ctx, r, work);
         if (!v.ok) {
           error = t(v.code, v.params);
           renderDialog();
@@ -944,6 +1026,12 @@ async function updateWakeLock() {
 }
 
 // ---------- events ----------
+
+function toggleRowEdit(p, kind) {
+  rowEdit = rowEdit && rowEdit.p === p && rowEdit.kind === kind ? null : { p, kind };
+  pendingFocus = kind === 'bid' ? `edit-bid-${p}` : `cloud-${p}`;
+  render();
+}
 
 const actions = {
   'new-game': () => {
@@ -1031,14 +1119,19 @@ const actions = {
   // play
   bid: (el) => setLiveValue('bid', el),
   tricks: (el) => setLiveValue('tricks', el),
-  cloud: (el) => {
-    const game = data.current;
-    const live = game.live;
+  'edit-bid': (el) => toggleRowEdit(Number(el.dataset.p), 'bid'),
+  'cloud-open': (el) => toggleRowEdit(Number(el.dataset.p), 'cloud'),
+  'panel-close': () => {
+    rowEdit = null;
+    render();
+  },
+  'fix-bid': (el) => fixBid(el),
+  'set-cloud': (el) => {
+    const live = data.current.live;
     const p = Number(el.dataset.p);
-    const opts = G.cloudOptions(game, game.rounds.length, live, p);
-    const next = opts[(opts.indexOf(live.adjust[p] || 0) + 1) % opts.length];
-    live.adjust = live.adjust.map(() => 0);
-    live.adjust[p] = next;
+    live.adjust = live.adjust.map(() => 0); // only one cloud per round
+    live.adjust[p] = Number(el.dataset.adj);
+    rowEdit = null;
     persist();
     render();
   },
@@ -1047,12 +1140,14 @@ const actions = {
     const v = G.validateBids(game, game.rounds.length, game.live.bids);
     if (!v.ok) return toast(t(v.code, v.params), { error: true });
     game.live.phase = 'play';
+    rowEdit = null;
     persist();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   },
   'back-bids': () => {
     data.current.live.phase = 'bid';
+    rowEdit = null;
     persist();
     render();
   },
@@ -1132,6 +1227,14 @@ document.addEventListener('change', (e) => {
     persist();
   } else if (el.dataset.rule && draft) {
     draft.rules[el.dataset.rule] = el.checked;
+  } else if (el.dataset.dlgRule && data.current) {
+    const game = data.current;
+    game.rules[el.dataset.dlgRule] = el.checked;
+    if (el.dataset.dlgRule === 'cloud' && !el.checked && game.live) game.live.adjust = game.live.adjust.map(() => 0);
+    game.updatedAt = Date.now();
+    rowEdit = null;
+    persist();
+    render();
   } else if (el.dataset.dlgSetting === 'keepAwake') {
     data.settings.keepAwake = el.checked;
     persist();

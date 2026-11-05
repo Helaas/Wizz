@@ -1047,6 +1047,73 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+button.bid-pill {
+  gap: 6px;
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+button.bid-pill .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+button.bid-pill:hover {
+  border-color: var(--line-2);
+}
+
+button.bid-pill.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.row-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.panel-label .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.row-panel .chip {
+  background: var(--surface);
+}
+
+.row-panel .chip.on {
+  background: var(--accent);
+}
+
+.rules-edit {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .delta {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1083,6 +1150,11 @@ a {
 .cloud-btn .icon {
   width: 18px;
   height: 18px;
+}
+
+.cloud-btn.open {
+  border-style: solid;
+  border-color: var(--accent);
 }
 
 .cloud-btn.on {
@@ -1135,8 +1207,13 @@ a {
 }
 
 .actionbar-btns .btn {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   max-width: 260px;
+  padding: 0 12px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
 }
 
 /* ---------- tab bar ---------- */
@@ -2020,6 +2097,11 @@ body[data-view="play"] .toast {
 
   .prow:not(:has(.prow-mid)) {
     grid-template-areas: "head pick";
+  }
+
+  .row-panel {
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 }
 

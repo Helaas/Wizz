@@ -64,6 +64,26 @@ test('bids may not add up: forbidden value for the dealer', () => {
   assert.equal(G.validateBids(game(4), r, [1, 0, 1, 1]).ok, true, 'allowed without the rule');
 });
 
+test('correcting any bid respects "bids may not add up"', () => {
+  const g = game(4, { noEvenBids: true });
+  const r = 2; // 3 cards
+  assert.equal(G.forbiddenBidFor(g, r, [1, 0, 1, 0], 1), 1, 'P2 (not the dealer) may not correct to 1');
+  assert.equal(G.forbiddenBidFor(g, r, [1, 0, 1, 2], 3), 1);
+  assert.equal(G.forbiddenBidFor(g, r, [3, 3, 1, 2], 2), null, 'others already over');
+  assert.equal(G.forbiddenBidFor(game(4), r, [1, 0, 1, 2], 3), null, 'rule off');
+});
+
+test('edits of a scored round keep the optional rules that round used', () => {
+  const g = game(3); // all optional rules off now
+  const r = 2; // 3 cards
+  const rules = G.rulesForRound(g, r, { bids: [1, 1, 1], tricks: [1, 1, 0], adjust: [0, 1, 0] });
+  assert.equal(rules.cloud, true);
+  assert.equal(rules.bomb, true);
+  const strict = game(3, { noEvenBids: true });
+  assert.equal(G.rulesForRound(strict, r, { bids: [1, 1, 1], tricks: [1, 1, 1] }).noEvenBids, false);
+  assert.equal(G.rulesForRound(strict, r, { bids: [1, 1, 0], tricks: [1, 1, 1] }).noEvenBids, true);
+});
+
 test('bid validation catches gaps and out-of-range values', () => {
   const g = game(3);
   assert.equal(G.validateBids(g, 0, [0, null, 1]).code, 'errBidsMissing');

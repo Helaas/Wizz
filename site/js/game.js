@@ -120,17 +120,34 @@ export function newLiveRound(playerCount) {
  * that makes the total equal the cards. Returns that value once all others have bid.
  */
 export function forbiddenBid(game, roundIndex, bids) {
+  return forbiddenBidFor(game, roundIndex, bids, dealerIndex(game, roundIndex));
+}
+
+/** Same check for any player, used when a bid is corrected after everyone has bid. */
+export function forbiddenBidFor(game, roundIndex, bids, player) {
   if (!game.rules.noEvenBids) return null;
   const cards = cardsInRound(roundIndex);
-  const dealer = dealerIndex(game, roundIndex);
   let others = 0;
   for (let p = 0; p < game.players.length; p++) {
-    if (p === dealer) continue;
+    if (p === player) continue;
     if (bids[p] == null) return null;
     others += bids[p];
   }
   const f = cards - others;
   return f >= 0 && f <= cards ? f : null;
+}
+
+/**
+ * Rules to check an edit of a scored round against. Optional rules can be switched
+ * during a game, so a rule the round already relied on stays allowed for that round.
+ */
+export function rulesForRound(game, roundIndex, round) {
+  const cards = cardsInRound(roundIndex);
+  const rules = { ...game.rules };
+  if (round.adjust && round.adjust.some((a) => a)) rules.cloud = true;
+  if (sum(round.tricks) === cards - 1) rules.bomb = true;
+  if (sum(round.bids) === cards) rules.noEvenBids = false;
+  return rules;
 }
 
 const OK = Object.freeze({ ok: true });

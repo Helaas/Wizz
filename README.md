@@ -10,6 +10,7 @@ The app is a small static web app with no build step and no server. Games are sa
 
 - **3–10 players.** The number of rounds follows from the deck: every player gets one more card each round.
 - **Bids, then tricks.** Players are listed in bidding order: the player left of the dealer bids first and the dealer bids last. The dealer rotates every round.
+- **Bids stay editable while playing:** tap a player's bid to correct it.
 - **Live feedback:** the bid total shows how far over or under the hand it is, the tricks must add up before a round can be scored, and every player's points for the round appear as you enter tricks.
 - **Scoreboard** with each player's running total, bid/tricks and points per round. Tap a round number to correct it, at any time, even after the game ends.
 - **Chart** of every player's score over the rounds, with a tooltip per round and tap-to-highlight.
@@ -44,7 +45,9 @@ Standard Wizard scoring, adjustable in the game setup:
 
 - **Bids may not add up:** the dealer can't make the total of all bids equal the number of cards. The forbidden value is blocked.
 - **Bomb card:** one trick per round can go to nobody, so tricks may total one less than the cards.
-- **Cloud card:** the player who wins the cloud trick changes their bid by +1 or −1 (tap the cloud button next to that player).
+- **Cloud card:** whoever wins the trick with the cloud must change their bid by one, up or down. During play, tap **Cloud** next to that player and pick the new bid. A bid of 0 can only go up, and there is only one cloud per round. The scoreboard marks bids changed by the cloud.
+
+Optional rules can be switched on or off during a game under **Menu → Rules**, for example if you forgot to enable the cloud when starting.
 
 ## Development
 
